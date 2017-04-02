@@ -3,6 +3,9 @@ from logging import Handler as LoggingHandler
 from pygelf import gelf
 import ssl
 import socket
+import requests
+import queue
+import threading
 
 try:
     import httplib
@@ -156,3 +159,38 @@ class GelfHttpHandler(BaseHandler, LoggingHandler):
         data = self.convert_record_to_gelf(record)
         connection = httplib.HTTPConnection(host=self.host, port=self.port, timeout=self.timeout)
         connection.request('POST', self.path, data, self.headers)
+
+
+class GelfAsyncHttpHandler(BaseHandler, LoggingHandler):
+    def __init__(self, url, compress=True, timeout=5, max_queue_len=1000, **kwargs):
+        LoggingHandler.__init__(self)
+        BaseHandler.__init__(self, compress=compress, **kwargs)
+
+        self.queue = queue.Queue(max_queue_len)
+        self.thread = threading.Thread(target=self.thread_func)
+        self.thread.daemon = True
+        self.url = url
+        self.timeout = timeout
+        self.headers = {}
+        self.s = requests.Session()
+
+        if compress:
+            self.headers['Content-Encoding'] = 'gzip,deflate'
+
+        self.thread.start()
+
+    def close(self):
+        self.queue.put(None)
+        self.thread.join()
+        LoggingHandler.close(self)
+
+    def emit(self, record):
+        self.queue.put_nowait(record)
+
+    def thread_func(self):
+        while True:
+            record = self.queue.get()
+            if record is None:
+                return
+            data = self.convert_record_to_gelf(record)
+            self.s.post(self.url, data, headers=self.headers, timeout=self.timeout)
