@@ -6,6 +6,7 @@ import socket
 import requests
 import queue
 import threading
+import traceback
 
 try:
     import httplib
@@ -40,7 +41,6 @@ class BaseHandler(object):
 
 
 class GelfTcpHandler(BaseHandler, SocketHandler):
-
     def __init__(self, host, port, **kwargs):
         """
         Logging handler that transforms each record into GELF (graylog extended log format) and sends it over TCP.
@@ -58,7 +58,6 @@ class GelfTcpHandler(BaseHandler, SocketHandler):
 
 
 class GelfUdpHandler(BaseHandler, DatagramHandler):
-
     def __init__(self, host, port, compress=True, chunk_size=1300, **kwargs):
         """
         Logging handler that transforms each record into GELF (graylog extended log format) and sends it over UDP.
@@ -90,7 +89,6 @@ class GelfUdpHandler(BaseHandler, DatagramHandler):
 
 
 class GelfTlsHandler(GelfTcpHandler):
-
     def __init__(self, validate=False, ca_certs=None, certfile=None, keyfile=None, **kwargs):
         """
         TCP GELF logging handler with TLS support
@@ -130,7 +128,6 @@ class GelfTlsHandler(GelfTcpHandler):
 
 
 class GelfHttpHandler(BaseHandler, LoggingHandler):
-
     def __init__(self, host, port, compress=True, path='/gelf', timeout=5, **kwargs):
         """
         Logging handler that transforms each record into GELF (graylog extended log format) and sends it over HTTP.
@@ -193,4 +190,10 @@ class GelfAsyncHttpHandler(BaseHandler, LoggingHandler):
             if record is None:
                 return
             data = self.convert_record_to_gelf(record)
-            self.s.post(self.url, data, headers=self.headers, timeout=self.timeout)
+
+            for _ in range(5):
+                try:
+                    self.s.post(self.url, data, headers=self.headers, timeout=self.timeout)
+                    break
+                except:
+                    traceback.print_exc()
